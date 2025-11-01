@@ -35,6 +35,10 @@ npm run lint:fix           # Fix linting issues automatically
 # Development Workflow
 npm run build && npm link  # Build and link for testing
 codemie doctor             # Verify installation and configuration
+
+# Release & Publishing
+git tag -a v0.0.1 -m "Release version 0.0.1"  # Create release tag
+git push origin v0.0.1                         # Push tag to trigger publish
 ```
 
 ## Core Principles
@@ -56,6 +60,78 @@ codemie doctor             # Verify installation and configuration
 - One source of truth for each piece of knowledge
 
 **Remember:** Simple, clean code is better than clever, complex code.
+
+## Specialized Agents
+
+This project uses specialized subagents for complex, multi-step workflows. These agents have dedicated system prompts stored in `.claude/agents/` that can be updated independently.
+
+### Release Manager Agent
+
+**Location:** `.claude/agents/release-manager.md`
+
+**Purpose:** Automate the complete release process from change analysis to npm publication.
+
+**Trigger Phrases:**
+- "Release version X.X.X"
+- "Create a new release"
+- "Release a patch/minor/major version"
+- "Use release manager to..."
+- "Prepare a release"
+
+**What it does:**
+1. Runs pre-flight checks (clean working directory, correct branch)
+2. Analyzes git history since last release tag
+3. Categorizes commits using conventional commits
+4. Generates structured release notes (Keep a Changelog format)
+5. Updates package.json and package-lock.json version
+6. Creates git commit for version bump
+7. Creates and pushes annotated git tag
+8. Creates GitHub release with generated notes
+9. Triggers npm publish workflow via GitHub Actions
+10. Reports completion status and provides verification links
+
+**Example Usage:**
+```
+You: "Release version 0.0.2"
+
+Claude:
+1. Checks git status and current branch
+2. Analyzes 12 commits since v0.0.1
+3. Generates release notes with categorized changes
+4. Shows preview and asks for confirmation
+5. Updates package.json to 0.0.2
+6. Creates commit "chore: bump version to 0.0.2"
+7. Creates tag v0.0.2 and pushes
+8. Creates GitHub Release
+9. Reports: "✅ Released v0.0.2, npm publish workflow triggered"
+```
+
+**Customization:**
+Edit `.claude/agents/release-manager.md` to modify:
+- Release notes format
+- Commit categorization rules
+- Version bump strategies
+- Error handling behavior
+- Pre-flight check requirements
+
+### Creating Additional Agents
+
+To create your own specialized agent:
+
+1. **Create the agent file**: `.claude/agents/{role}-{function}.md`
+   - Example: `code-reviewer.md`, `test-generator.md`, `security-auditor.md`
+
+2. **Define the system prompt**: Include role, capabilities, workflow, error handling, and examples
+
+3. **Document trigger phrases**: Add them to this CLAUDE.md section
+
+4. **Update agents README**: Add documentation to `.claude/agents/README.md`
+
+**Naming convention:** `{role}-{function}.md`
+- ✅ `release-manager.md`, `code-reviewer.md`, `test-generator.md`
+- ❌ `release.md`, `agent1.md`, `helper.md`
+
+**See:** `.claude/agents/README.md` for detailed agent creation guide and best practices.
 
 ## Critical Policies
 
@@ -121,6 +197,80 @@ git push -u origin feature/your-feature-name
 - Be descriptive but concise
 - Include ticket/issue number if applicable (e.g., `feature/GH-123-add-feature`)
 - Keep branch names under 50 characters when possible
+
+### Release & Publishing Policy
+
+**IMPORTANT - How to publish to npm registry:**
+
+The project uses GitHub Actions to automatically publish to npm when a release is created. The workflow is defined in `.github/workflows/publish.yml`.
+
+**Step-by-step release process:**
+
+1. **Ensure you're on the main branch** (after merging your feature branch):
+   ```bash
+   git checkout main
+   git pull origin main
+   ```
+
+2. **Create an annotated git tag** with the version number:
+   ```bash
+   # Match the version in package.json (e.g., 0.0.1)
+   git tag -a v0.0.1 -m "Release version 0.0.1"
+   ```
+
+3. **Push the tag to GitHub**:
+   ```bash
+   git push origin v0.0.1
+   ```
+
+4. **Create a GitHub Release** (two options):
+
+   **Option A - GitHub UI (recommended):**
+   - Go to GitHub repository → Releases → "Draft a new release"
+   - Select the tag you just pushed (`v0.0.1`)
+   - Add release title (e.g., `v0.0.1` or `Release 0.0.1`)
+   - Add release notes describing changes
+   - Click "Publish release"
+
+   **Option B - Manual workflow trigger:**
+   - Go to Actions → "Publish to NPM" workflow
+   - Click "Run workflow"
+   - Select the `main` branch
+   - Click "Run workflow"
+
+5. **The workflow will automatically**:
+   - Checkout code
+   - Install dependencies
+   - Run CI checks (`npm run ci` - includes lint, build, and tests)
+   - Publish to npm with `npm publish --access public`
+   - Authenticate using the `NPM_TOKEN` secret
+
+**Prerequisites:**
+- `NPM_TOKEN` must be configured in GitHub repository secrets
+- Version in `package.json` must match the tag version (without the `v` prefix)
+- All CI checks must pass (linting, build, tests)
+
+**Version bumping:**
+```bash
+# Update version in package.json
+npm version patch    # 0.0.1 → 0.0.2
+npm version minor    # 0.0.1 → 0.1.0
+npm version major    # 0.0.1 → 1.0.0
+
+# This creates a commit and tag automatically
+# Then push both:
+git push origin main --tags
+```
+
+**Verifying the publish:**
+```bash
+# Check on npm registry
+npm view @codemie/code
+
+# Install and test locally
+npm install -g @codemie/code@latest
+codemie doctor
+```
 
 ## Reference Implementations
 
