@@ -1,9 +1,15 @@
 name: Publish to NPM
 
+# Disabled until npm organization is properly configured
 on:
-  release:
-    types: [published]
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "publish" to confirm'
+        required: true
+        type: string
+  # release:
+  #   types: [published]
 
 jobs:
   publish:
@@ -12,6 +18,12 @@ jobs:
     environment: prod
 
     steps:
+      - name: Confirm publish
+        if: ${{ github.event.inputs.confirm != 'publish' }}
+        run: |
+          echo "❌ Workflow disabled. To enable, type 'publish' when triggering manually."
+          exit 1
+
       - name: Checkout code
         uses: actions/checkout@v4
 
