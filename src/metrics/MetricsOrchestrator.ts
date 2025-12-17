@@ -19,6 +19,7 @@ import type { AgentMetricsSupport, MetricsSession, FileSnapshot } from './types.
 import { METRICS_CONFIG } from './config.js';
 import { logger } from '../utils/logger.js';
 import { watch } from 'fs';
+import { detectGitBranch } from './utils/git.js';
 
 export interface MetricsOrchestratorOptions {
   sessionId?: string; // Optional: provide existing session ID
@@ -91,6 +92,9 @@ export class MetricsOrchestrator {
 
       logger.debug(`[MetricsOrchestrator] Pre-spawn snapshot: ${this.beforeSnapshot.files.length} files`);
 
+      // Detect git branch from working directory
+      const gitBranch = await detectGitBranch(this.workingDirectory);
+
       // Create session record
       this.session = {
         sessionId: this.sessionId,
@@ -99,6 +103,7 @@ export class MetricsOrchestrator {
         ...(this.project && { project: this.project }),
         startTime: Date.now(),
         workingDirectory: this.workingDirectory,
+        ...(gitBranch && { gitBranch }), // Include branch if detected
         status: 'active',
         correlation: {
           status: 'pending',
@@ -334,6 +339,11 @@ export class MetricsOrchestrator {
       for (const delta of deltas) {
         // Set CodeMie session ID
         delta.sessionId = this.sessionId;
+
+        // Set gitBranch if not already present in delta
+        if (!delta.gitBranch) {
+          delta.gitBranch = await detectGitBranch(this.workingDirectory);
+        }
 
         // Append to JSONL
         await this.deltaWriter.appendDelta(delta);
