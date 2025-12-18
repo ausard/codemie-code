@@ -137,6 +137,30 @@ export class AgentCLI {
         process.exit(1);
       }
 
+      // NEW: Auth validation via provider plugin
+      try {
+        // Check if provider implements auth validation
+        const setupSteps = provider ? ProviderRegistry.getSetupSteps(config.provider || '') : null;
+
+        if (setupSteps?.validateAuth) {
+          const validationResult = await setupSteps.validateAuth(config);
+
+          if (!validationResult.valid) {
+            const { handleAuthValidationFailure } = await import('../../providers/core/auth-validation.js');
+            const reauthed = await handleAuthValidationFailure(validationResult, setupSteps, config);
+
+            if (!reauthed) {
+              console.log(chalk.yellow('\n⚠️  Authentication required\n'));
+              process.exit(1);
+            }
+          }
+        }
+      } catch (error) {
+        logger.error('Auth validation failed:', error);
+        console.log(chalk.red('\n✗ Authentication check failed\n'));
+        process.exit(1);
+      }
+
       // Validate provider and model compatibility
       if (!this.validateCompatibility(config)) {
         process.exit(1);

@@ -11,16 +11,20 @@
 
 import inquirer from 'inquirer';
 import chalk from 'chalk';
+import ora from 'ora';
 import type {
   ProviderSetupSteps,
-  ProviderCredentials
+  ProviderCredentials,
+  AuthValidationResult,
+  AuthStatus
 } from '../../core/types.js';
 import type { CodeMieConfigOptions, CodeMieIntegrationInfo } from '../../../env/types.js';
 import { ProviderRegistry } from '../../core/registry.js';
 import { SSOTemplate } from './sso.template.js';
 import { CodeMieSSO } from './sso.auth.js';
 import { SSOModelProxy } from './sso.models.js';
-import { fetchCodeMieUserInfo } from './sso.http-client.js';
+import { fetchCodeMieUserInfo, fetchCodeMieModels } from './sso.http-client.js';
+import { logger } from '../../../utils/logger.js';
 
 /**
  * SSO setup steps implementation
@@ -224,6 +228,129 @@ export const SSOSetupSteps: ProviderSetupSteps = {
     }
 
     return config;
+  },
+
+  /**
+   * Validate SSO authentication status
+   *
+   * Checks credential validity, expiration, and API access
+   */
+  async validateAuth(config: CodeMieConfigOptions): Promise<AuthValidationResult> {
+    try {
+      const baseUrl = config.codeMieUrl || config.baseUrl;
+      if (!baseUrl) {
+        return {
+          valid: false,
+          error: 'No CodeMie URL configured'
+        };
+      }
+
+      const sso = new CodeMieSSO();
+      const credentials = await sso.getStoredCredentials(baseUrl);
+
+      if (!credentials) {
+        return {
+          valid: false,
+          error: `No SSO credentials found for ${baseUrl}. Please run: codemie profile login --url ${baseUrl}`
+        };
+      }
+
+      // Test API access
+      try {
+        await fetchCodeMieModels(credentials.apiUrl, credentials.cookies);
+      } catch (error) {
+        return {
+          valid: false,
+          error: `API access test failed: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+
+      return {
+        valid: true,
+        expiresAt: credentials.expiresAt
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  },
+
+  /**
+   * Prompt user for re-authentication
+   *
+   * Interactive re-auth flow when validation fails
+   */
+  async promptForReauth(config: CodeMieConfigOptions): Promise<boolean> {
+    try {
+      // Show warning about credentials
+      console.log(chalk.yellow('\n⚠️  Authentication required\n'));
+
+      // Prompt user
+      const { confirm } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'confirm',
+          message: 'Re-authenticate now?',
+          default: true
+        }
+      ]);
+
+      if (!confirm) {
+        return false;
+      }
+
+      // Run authentication
+      const codeMieUrl = config.codeMieUrl;
+      if (!codeMieUrl) {
+        console.log(chalk.red('\n✗ No CodeMie URL configured\n'));
+        return false;
+      }
+
+      const spinner = ora('Launching SSO authentication...').start();
+
+      const sso = new CodeMieSSO();
+      const result = await sso.authenticate({ codeMieUrl, timeout: 120000 });
+
+      if (result.success) {
+        spinner.succeed(chalk.green('SSO authentication successful'));
+        return true;
+      } else {
+        spinner.fail(chalk.red('SSO authentication failed'));
+        console.log(chalk.red(`Error: ${result.error}`));
+        return false;
+      }
+    } catch (error) {
+      logger.error('Re-authentication failed:', error);
+      return false;
+    }
+  },
+
+  /**
+   * Get authentication status for display
+   *
+   * Returns current auth status information
+   */
+  async getAuthStatus(config: CodeMieConfigOptions): Promise<AuthStatus> {
+    try {
+      const baseUrl = config.codeMieUrl || config.baseUrl;
+      const sso = new CodeMieSSO();
+      const credentials = await sso.getStoredCredentials(baseUrl);
+
+      if (!credentials) {
+        return { authenticated: false };
+      }
+
+      return {
+        authenticated: true,
+        expiresAt: credentials.expiresAt,
+        apiUrl: credentials.apiUrl
+      };
+    } catch (error) {
+      logger.error('Failed to get auth status:', error);
+      return { authenticated: false };
+    }
   }
 };
 
