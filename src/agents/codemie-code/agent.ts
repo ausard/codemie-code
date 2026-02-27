@@ -324,6 +324,11 @@ export class CodeMieAgent {
           model: this.config.model,
           apiKey: this.config.authToken,
           configuration: ssoConfig,
+          // Force Completions API for LiteLLM proxy compatibility.
+          // The Responses API sends a full `reasoning` object (with `summary`) that
+          // LiteLLM/Azure backends may reject. The Completions API only sends the
+          // widely-supported `reasoning_effort` scalar.
+          useResponsesApi: false,
           ...commonConfig
         });
       }
